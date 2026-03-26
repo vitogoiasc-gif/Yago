@@ -1467,10 +1467,24 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
               onClick={async () => {
                 try {
                   const basePath = `artifacts/${appId}/public/data/sites`;
-                  for (const site of INITIAL_SITES) {
-                    await addDoc(collection(db, basePath), site);
+                  
+                  // Verifica quais obras já existem para evitar duplicação
+                  const nomesExistentes = sites.map(s => s.nome);
+                  const obrasFaltantes = INITIAL_SITES.filter(s => !nomesExistentes.includes(s.nome));
+                  
+                  if (obrasFaltantes.length === 0) {
+                    showFeedback('Todas as obras já estão cadastradas!');
+                    return;
                   }
-                  showFeedback('Obras sincronizadas com sucesso!');
+
+                  showFeedback('A sincronizar obras...', 'success');
+                  
+                  // Envia todas as obras faltantes em paralelo (muito mais rápido)
+                  await Promise.all(
+                    obrasFaltantes.map(site => addDoc(collection(db, basePath), site))
+                  );
+                  
+                  showFeedback(`${obrasFaltantes.length} obras sincronizadas com sucesso!`);
                 } catch(err) { 
                   console.error(err); 
                   showFeedback('Erro ao carregar obras.', 'error');
