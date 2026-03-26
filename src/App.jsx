@@ -261,19 +261,6 @@ export default function App() {
     return () => { unsubUsers(); unsubSites(); unsubActs(); unsubMods(); unsubMetrics(); };
   }, [firebaseUser]);
 
-  // Inicializa Sites padrão se o banco estiver vazio
-  useEffect(() => {
-    if (dataLoaded && sites.length === 0 && firebaseUser && db) {
-      const seedSites = async () => {
-        const basePath = `artifacts/${appId}/public/data/sites`;
-        for (const site of INITIAL_SITES) {
-          await addDoc(collection(db, basePath), site);
-        }
-      };
-      seedSites();
-    }
-  }, [dataLoaded, sites, firebaseUser]);
-
   // Regra de Negócio: Auto-criação Fechamento de Ponto
   useEffect(() => {
     if (!dataLoaded || sites.length === 0 || !db) return;
@@ -1464,6 +1451,39 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* Nova Seção de Dados Iniciais (Ocupa as duas colunas no topo) */}
+        <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 shadow-md lg:col-span-2">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+            <Activity className="mr-2 text-slate-400" size={20} /> Banco de Dados Inicial
+          </h3>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-900 p-4 rounded border border-slate-700">
+            <div>
+              <h4 className="text-white font-medium">Obras Padrão ({sites.length} cadastradas)</h4>
+              <p className="text-sm text-slate-400 mt-1">Carregue a lista inicial de obras caso o sistema esteja vazio.</p>
+            </div>
+            <button 
+              type="button"
+              onClick={async () => {
+                try {
+                  const basePath = `artifacts/${appId}/public/data/sites`;
+                  for (const site of INITIAL_SITES) {
+                    await addDoc(collection(db, basePath), site);
+                  }
+                  showFeedback('Obras sincronizadas com sucesso!');
+                } catch(err) { 
+                  console.error(err); 
+                  showFeedback('Erro ao carregar obras.', 'error');
+                }
+              }}
+              className="mt-4 sm:mt-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium transition shadow"
+            >
+              Carregar Obras Iniciais
+            </button>
+          </div>
+        </div>
+
+        {/* Gestão de Acessos */}
         <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 shadow-md">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <Users className="mr-2 text-slate-400" size={20} /> Conceder Acesso
@@ -1510,6 +1530,7 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
           </div>
         </div>
 
+        {/* Criador de Módulos Customizados */}
         <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 shadow-md">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <FileText className="mr-2 text-slate-400" size={20} /> Nova Atividade Customizada
