@@ -5,17 +5,25 @@ import {
   AlertCircle, Paperclip, ChevronDown, Eye, FileImage
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// --- CONFIGURAÇÃO FIREBASE ---
-const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
-const auth = app ? getAuth(app) : null;
-const db = app ? getFirestore(app) : null;
-const storage = app ? getStorage(app) : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'gestao-operacional-app';
+// --- CONFIGURAÇÃO FIREBASE (A SUA BASE DE DADOS REAL) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyAEntZ_U6fcZSggVvBT3WpZn6WccVNL8Mw",
+  authDomain: "gestao-adm-3cbcb.firebaseapp.com",
+  projectId: "gestao-adm-3cbcb",
+  storageBucket: "gestao-adm-3cbcb.firebasestorage.app",
+  messagingSenderId: "81588169589",
+  appId: "1:81588169589:web:a7501ffa1907ebaa72c13c"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+const appId = 'gestao-operacional-app';
 
 // --- DADOS INICIAIS ---
 const INITIAL_SITES = [
@@ -80,7 +88,7 @@ const DEFAULT_MODULES = [
       { key: 'nome', label: 'Nome do Colaborador', type: 'text' },
       { key: 'tipo', label: 'Tipo', type: 'select', options: ['Advertência', 'Suspensão'] },
       { key: 'motivo_clt', label: 'Motivo CLT', type: 'select', options: MOTIVOS_CLT },
-      { key: 'status', label: 'Status', type: 'select', options: ['Pendente', 'Aplicada', 'Cancelada', 'Concluído', 'Cancelado'] }
+      { key: 'status', label: 'Status', type: 'select', options: ['Pendente', 'Aplicada', 'Cancelada', 'Concluído'] }
     ]
   },
   {
@@ -170,7 +178,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
       <div className="bg-slate-800 rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-900">
           <h3 className="text-lg font-semibold text-white">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -212,11 +220,7 @@ export default function App() {
     if (!auth) return;
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (err) {
         console.error("Erro ao autenticar no Firebase:", err);
       }
@@ -226,7 +230,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Busca de Dados (Regra 2: Sem queries complexas, trazer tudo e filtrar no JS)
+  // Busca de Dados
   useEffect(() => {
     if (!firebaseUser || !db) return;
 
@@ -282,7 +286,6 @@ export default function App() {
       const basePath = `artifacts/${appId}/public/data/activities`;
       
       sites.forEach(site => {
-        // Verifica se já existe para evitar duplicação no mesmo dia
         const exists = activities.some(a => 
           a.type === 'fechamento_ponto' && 
           a.siteId === site.id && 
@@ -306,9 +309,9 @@ export default function App() {
         }
       });
     }
-  }, [dataLoaded, sites.length, activities.length]); // Dependências limitadas para não rodar em loop
+  }, [dataLoaded, sites.length, activities.length]);
 
-  // --- FILTROS DE DADOS BASEADOS NO USUÁRIO (MOVIDOS PARA ANTES DOS EARLY RETURNS) ---
+  // --- FILTROS DE DADOS BASEADOS NO USUÁRIO ---
   const isMaster = appUser?.role === 'master';
   
   const visibleSites = useMemo(() => {
@@ -317,7 +320,6 @@ export default function App() {
       ? sites 
       : sites.filter(s => s.responsavel?.toLowerCase() === appUser.responsavelName?.toLowerCase());
     
-    // Retorna as obras sempre ordenadas por ordem alfabética (copiamos o array para evitar mutações)
     return [...filtered].sort((a, b) => a.nome.localeCompare(b.nome));
   }, [sites, isMaster, appUser]);
   
@@ -342,7 +344,7 @@ export default function App() {
         responsavelName: 'MASTER'
       };
       setAppUser({ ...newMaster, role: 'master' });
-      addDoc(collection(db, `artifacts/${appId}/public/data/appUsers`), newMaster);
+      if(db) addDoc(collection(db, `artifacts/${appId}/public/data/appUsers`), newMaster);
     } else {
       setLoginError('Credenciais inválidas ou usuário não cadastrado.');
     }
@@ -354,7 +356,6 @@ export default function App() {
     setLoginPassword('');
   };
 
-  // --- EARLY RETURNS DEVEM OCORRER SEMPRE APÓS TODOS OS HOOKS ---
   if (!firebaseUser) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">Conectando ao sistema...</div>;
   }
@@ -398,14 +399,12 @@ export default function App() {
     );
   }
 
-  // --- RENDERIZADORES PRINCIPAIS ---
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col md:flex-row text-slate-200 font-sans">
-      {/* SIDEBAR */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} flex-shrink-0 bg-slate-800 border-r border-slate-700 transition-all duration-300 flex flex-col sticky top-0 h-screen overflow-y-auto hidden md:flex`}>
         <div className="p-4 flex items-center justify-between border-b border-slate-700">
           {sidebarOpen && <span className="font-bold text-white tracking-wide truncate">GEOT Painel</span>}
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+          <button type="button" onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1 hover:bg-slate-700 rounded text-slate-400">
             <Menu size={20} />
           </button>
         </div>
@@ -448,30 +447,27 @@ export default function App() {
         </nav>
         
         <div className="p-4 border-t border-slate-700">
-          <button onClick={logout} className="flex items-center w-full p-2 rounded-md hover:bg-red-900/30 text-red-400 transition-colors">
+          <button type="button" onClick={logout} className="flex items-center w-full p-2 rounded-md hover:bg-red-900/30 text-red-400 transition-colors">
             <LogOut size={18} />
             {sidebarOpen && <span className="ml-3 text-sm font-medium">Sair</span>}
           </button>
         </div>
       </aside>
 
-      {/* MOBILE HEADER */}
       <div className="md:hidden bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center sticky top-0 z-20">
         <span className="font-bold text-white tracking-wide">GEOT Painel</span>
-        <button onClick={() => setSidebarOpen(true)} className="p-1 text-slate-400">
+        <button type="button" onClick={() => setSidebarOpen(true)} className="p-1 text-slate-400">
           <Menu size={24} />
         </button>
       </div>
       
-      {/* MOBILE SIDEBAR OVERLAY */}
       {sidebarOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           <div className="fixed inset-0 bg-black opacity-50" onClick={() => setSidebarOpen(false)}></div>
           <aside className="w-64 bg-slate-800 h-full relative flex flex-col z-50 overflow-y-auto shadow-2xl">
-            {/* Same sidebar content for mobile */}
             <div className="p-4 flex items-center justify-between border-b border-slate-700">
               <span className="font-bold text-white tracking-wide truncate">GEOT Painel</span>
-              <button onClick={() => setSidebarOpen(false)} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+              <button type="button" onClick={() => setSidebarOpen(false)} className="p-1 hover:bg-slate-700 rounded text-slate-400">
                 <X size={20} />
               </button>
             </div>
@@ -493,7 +489,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-900 p-4 lg:p-8">
         {activeTab === 'dashboard' && (
           <Dashboard 
@@ -502,6 +497,7 @@ export default function App() {
             chartMetrics={chartMetrics} 
             customModules={customModules}
             isMaster={isMaster}
+            appId={appId}
           />
         )}
         
@@ -524,11 +520,10 @@ export default function App() {
   );
 }
 
-// --- SUB-COMPONENTES ---
-
 function NavItem({ icon, label, active, onClick, open }) {
   return (
     <button 
+      type="button"
       onClick={onClick}
       className={`flex items-center w-full p-2.5 rounded-lg transition-colors ${
         active ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-700 hover:text-white'
@@ -541,20 +536,16 @@ function NavItem({ icon, label, active, onClick, open }) {
   );
 }
 
-// --- DASHBOARD ESTRATÉGICO ---
-function Dashboard({ sites, activities, chartMetrics, customModules, isMaster }) {
+function Dashboard({ sites, activities, chartMetrics, customModules, isMaster, appId }) {
   const [metricModalOpen, setMetricModalOpen] = useState(false);
   
-  // Resumo Global
   const totalSites = sites.length;
   const pendingDemands = activities.filter(a => !['Concluído', 'Devolvido', 'Cancelada'].includes(a.status || a.situacao)).length;
   const completedDemands = activities.filter(a => ['Concluído', 'Devolvido', 'Cancelada'].includes(a.status || a.situacao)).length;
 
-  // Cálculos de Desempenho por Responsável
   const performanceByResponsavel = useMemo(() => {
     const stats = {};
     
-    // Inicializa os responsáveis baseados nas obras visíveis
     sites.forEach(s => {
       const resp = s.responsavel || 'Sem Responsável';
       if (!stats[resp]) {
@@ -562,7 +553,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
       }
     });
 
-    // Contabiliza as atividades de cada responsável
     activities.forEach(a => {
       const site = sites.find(s => s.id === a.siteId);
       if (site) {
@@ -579,16 +569,13 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
       }
     });
 
-    // Retorna array ordenado pelo total de demandas
     return Object.values(stats).sort((a, b) => b.total - a.total);
   }, [sites, activities]);
 
-  // Cálculos do Gráfico Comparativo
   const chartData = useMemo(() => {
     return sites.map(site => {
       const siteActs = activities.filter(a => a.siteId === site.id);
       
-      // Filtros padrão
       const faltas = siteActs.filter(a => a.type === 'controle_ponto').reduce((acc, curr) => acc + (Number(curr.faltas) || 0), 0);
       const advertencias = siteActs.filter(a => a.type === 'medida_disciplinar' && a.tipo === 'Advertência').length;
       const suspensoes = siteActs.filter(a => a.type === 'medida_disciplinar' && a.tipo === 'Suspensão').length;
@@ -596,7 +583,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
       
       let dataRow = { site: site.nome, faltas, advertencias, suspensoes, veiculos };
 
-      // Processa métricas customizadas
       chartMetrics.forEach(metric => {
         const count = siteActs.filter(a => {
           if (a.type !== metric.moduleId) return false;
@@ -612,11 +598,9 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
     });
   }, [sites, activities, chartMetrics]);
 
-  // Acha o valor máximo para escalar as barras do gráfico (Tailwind)
   const allValues = chartData.flatMap(d => Object.values(d).filter(v => typeof v === 'number'));
   const maxValue = allValues.length > 0 ? Math.max(...allValues, 10) : 10;
 
-  // Cores dinâmicas para o gráfico
   const barColors = ['bg-red-500', 'bg-orange-500', 'bg-purple-500', 'bg-blue-500', 'bg-emerald-500', 'bg-cyan-500', 'bg-pink-500', 'bg-yellow-500'];
   const metricsKeys = chartData.length > 0 ? Object.keys(chartData[0]).filter(k => k !== 'site') : [];
 
@@ -629,7 +613,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
         </div>
       </div>
 
-      {/* CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-800 rounded-lg p-5 border border-slate-700 shadow-md flex items-center">
           <div className="p-3 rounded-full bg-blue-900/50 text-blue-400 mr-4">
@@ -660,7 +643,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
         </div>
       </div>
 
-      {/* DESEMPENHO POR RESPONSÁVEL */}
       <div className="bg-slate-800 rounded-lg border border-slate-700 shadow-md overflow-hidden">
         <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex items-center">
           <Users size={20} className="mr-2 text-blue-400" />
@@ -703,7 +685,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
         </div>
       </div>
 
-      {/* GRÁFICO CUSTOMIZADO EM TAILWIND */}
       <div className="bg-slate-800 rounded-lg border border-slate-700 shadow-md overflow-hidden flex flex-col">
         <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
           <div className="flex items-center text-white font-semibold">
@@ -711,7 +692,7 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
             Comparativo por Obra
           </div>
           {isMaster && (
-            <button onClick={() => setMetricModalOpen(true)} className="flex items-center text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded transition-colors">
+            <button type="button" onClick={() => setMetricModalOpen(true)} className="flex items-center text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded transition-colors">
               <Plus size={14} className="mr-1" /> Nova Métrica
             </button>
           )}
@@ -723,7 +704,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
           ) : (
             <div className="min-w-[800px] h-[400px] flex flex-col pt-8 pb-2">
               <div className="flex-1 flex items-end space-x-2 border-b border-slate-700 relative">
-                {/* Y-Axis scale marks */}
                 <div className="absolute left-0 top-0 bottom-0 w-8 flex flex-col justify-between text-xs text-slate-500 opacity-50 border-r border-slate-700 border-dashed pr-1 items-end pointer-events-none">
                   <span>{maxValue}</span>
                   <span>{Math.round(maxValue * 0.75)}</span>
@@ -732,15 +712,14 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
                   <span>0</span>
                 </div>
                 
-                <div className="w-8 flex-shrink-0"></div> {/* Spacer for y-axis */}
+                <div className="w-8 flex-shrink-0"></div>
 
-                {/* Bars */}
                 {chartData.map((dataRow, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center group">
                     <div className="flex items-end space-x-1 w-full h-full pb-1 px-1 relative">
                       {metricsKeys.map((mKey, mIdx) => {
                         const val = dataRow[mKey];
-                        const heightPct = Math.max((val / maxValue) * 100, val > 0 ? 2 : 0); // min 2% if > 0 to be visible
+                        const heightPct = Math.max((val / maxValue) * 100, val > 0 ? 2 : 0);
                         const colorClass = barColors[mIdx % barColors.length];
                         
                         return (
@@ -766,7 +745,6 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
                 ))}
               </div>
 
-              {/* Legenda */}
               <div className="flex flex-wrap justify-center mt-6 gap-4">
                 {metricsKeys.map((mKey, mIdx) => (
                   <div key={mKey} className="flex items-center text-xs text-slate-300">
@@ -784,13 +762,13 @@ function Dashboard({ sites, activities, chartMetrics, customModules, isMaster })
         isOpen={metricModalOpen} 
         onClose={() => setMetricModalOpen(false)} 
         customModules={customModules} 
+        appId={appId}
       />
     </div>
   );
 }
 
-// Modal para Criar Métrica no Gráfico (Apenas Master)
-function ChartMetricModal({ isOpen, onClose, customModules }) {
+function ChartMetricModal({ isOpen, onClose, customModules, appId }) {
   const [name, setName] = useState('');
   const [moduleId, setModuleId] = useState('');
   const [column, setColumn] = useState('');
@@ -852,7 +830,6 @@ function ChartMetricModal({ isOpen, onClose, customModules }) {
   );
 }
 
-// --- NOVO: COMPONENTE DE PESQUISA INTELIGENTE DE OBRAS ---
 function SearchableSiteSelect({ sites, value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -914,7 +891,6 @@ function SearchableSiteSelect({ sites, value, onChange }) {
   );
 }
 
-// --- MÓDULOS PADRÃO / CUSTOMIZADOS (TABELAS) ---
 function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -923,13 +899,13 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({});
   const [uploading, setUploading] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [itemToDelete, setItemToDelete] = useState(null);
   
-  // Filtro Obras Dropdown
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
-  const [selectedSites, setSelectedSites] = useState([]); // Array of site IDs. Empty means all.
+  const [selectedSites, setSelectedSites] = useState([]);
 
   useEffect(() => {
-    // Reset selections on module change
     setSelectedSites([]);
   }, [moduleDef.id]);
 
@@ -938,23 +914,20 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
   ).sort((a, b) => new Date(b.data || 0) - new Date(a.data || 0));
 
   const handleOpenForm = (item = null) => {
+    setFormError('');
     setEditingItem(item);
     if (item) {
       setFormData(item);
     } else {
       const initialData = { siteId: sites[0]?.id || '', type: moduleDef.id, anexos: [], history: [] };
 
-      // Pré-preenchimento inteligente para novos registros
       moduleDef.columns.forEach(col => {
-        // 1. Puxa o nome do login atual para campos de autoria e deixa fixo
         if (['criador', 'solicitante'].includes(col.key)) {
           initialData[col.key] = appUser.name;
         }
-        // 2. Puxa o primeiro status padrão da lista (Ex: Pendente, Aguardando)
         else if (['status', 'situacao'].includes(col.key) && col.type === 'select' && col.options?.length > 0) {
           initialData[col.key] = col.options[0];
         }
-        // 3. Facilita puxando a data de hoje automaticamente
         else if (col.type === 'date') {
           initialData[col.key] = new Date().toISOString().split('T')[0];
         }
@@ -965,19 +938,18 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
     setIsFormOpen(true);
   };
 
-  // Processamento inteligente de Upload (Tenta Storage, usa Base64 como plano B)
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
     setUploading(true);
+    setFormError('');
     const newAnexos = [...(formData.anexos || [])];
 
     for (const file of files) {
       try {
         let fileUrl = null;
         
-        // Tentativa 1: Firebase Storage (Mais profissional e sem limite de tamanho)
         if (storage) {
           try {
             const fileRef = ref(storage, `artifacts/${appId}/public/data/attachments/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`);
@@ -988,10 +960,9 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
           }
         }
         
-        // Tentativa 2: Fallback para Base64 (Armazenamento direto no documento)
         if (!fileUrl) {
           if (file.size > 2 * 1024 * 1024) { 
-            alert(`O ficheiro ${file.name} é muito grande para guardar sem o Firebase Storage nativo (Limite: 2MB).`);
+            setFormError(`O ficheiro ${file.name} é muito grande para guardar sem o Firebase Storage nativo (Limite: 2MB).`);
             continue;
           }
           const reader = new FileReader();
@@ -1004,33 +975,31 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
         newAnexos.push({ name: file.name, url: fileUrl, type: file.type });
       } catch (err) {
         console.error("Erro no upload", err);
-        alert(`Ocorreu um erro ao processar o ficheiro: ${file.name}`);
+        setFormError(`Ocorreu um erro ao processar o ficheiro: ${file.name}`);
       }
     }
     
     setFormData({ ...formData, anexos: newAnexos });
     setUploading(false);
-    e.target.value = null; // Reseta o input
+    e.target.value = null;
   };
 
   const normalizeAnexo = (anx) => {
-    // Garante compatibilidade caso existam links antigos guardados como texto simples
     if (typeof anx === 'string') return { name: 'Ficheiro Antigo (Link)', url: anx, type: 'link' };
     return anx;
   };
 
   const handleSaveForm = async (e) => {
     e.preventDefault();
+    setFormError('');
     
-    // Validação extra pois o select customizado não aciona required nativo
     if (!formData.siteId) {
-      alert("Por favor, selecione a Obra Responsável para continuar.");
+      setFormError("Por favor, selecione a Obra Responsável para continuar.");
       return;
     }
 
     const basePath = `artifacts/${appId}/public/data/activities`;
     
-    // Auto-preencher criador/solicitante se for campo novo
     const finalData = { ...formData };
     if (!editingItem) {
       if (moduleDef.columns.some(c => c.key === 'criador') && !finalData.criador) finalData.criador = appUser.name;
@@ -1046,16 +1015,16 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
       setIsFormOpen(false);
     } catch (err) {
       console.error(err);
+      setFormError("Erro ao guardar o registo.");
     }
   };
 
-  const handleDelete = async (id) => {
-    if(window.confirm('Tem certeza que deseja excluir este registro?')) {
-      try {
-        await deleteDoc(doc(db, `artifacts/${appId}/public/data/activities`, id));
-      } catch (err) {
-        console.error(err);
-      }
+  const confirmDelete = async (id) => {
+    try {
+      await deleteDoc(doc(db, `artifacts/${appId}/public/data/activities`, id));
+      setItemToDelete(null);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -1078,6 +1047,7 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
         <div className="flex space-x-2 relative w-full md:w-auto">
           <div className="relative">
             <button 
+              type="button"
               onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
               className="flex items-center px-3 py-2 bg-slate-800 border border-slate-600 rounded text-sm text-slate-300 hover:bg-slate-700 transition-colors"
             >
@@ -1089,7 +1059,7 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
             {filterDropdownOpen && (
               <div className="absolute right-0 mt-2 w-64 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-30 p-2 max-h-64 overflow-y-auto">
                 <div className="mb-2 pb-2 border-b border-slate-700">
-                  <button onClick={() => setSelectedSites([])} className="text-xs text-blue-400 hover:text-blue-300 w-full text-left px-2 py-1">
+                  <button type="button" onClick={() => setSelectedSites([])} className="text-xs text-blue-400 hover:text-blue-300 w-full text-left px-2 py-1">
                     Limpar Filtros
                   </button>
                 </div>
@@ -1109,6 +1079,7 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
           </div>
           
           <button 
+            type="button"
             onClick={() => handleOpenForm()}
             className="flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm text-white transition-colors"
           >
@@ -1146,7 +1117,7 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
                       let val = act[col.key];
                       if (col.type === 'date' && val) {
                         const [y, m, d] = val.split('-');
-                        val = `${d}/${m}/${y}`; // formata br
+                        val = `${d}/${m}/${y}`;
                       }
                       
                       const isStatusCol = col.key === 'status' || col.key === 'situacao';
@@ -1170,13 +1141,13 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
                           </span>
                         </button>
                       )}
-                      <button onClick={() => { setEditingItem(act); setIsHistoryOpen(true); }} className="text-slate-400 hover:text-blue-400" title="Histórico / Chat">
+                      <button type="button" onClick={() => { setEditingItem(act); setIsHistoryOpen(true); }} className="text-slate-400 hover:text-blue-400" title="Histórico / Chat">
                         <MessageSquare size={16} />
                       </button>
-                      <button onClick={() => handleOpenForm(act)} className="text-slate-400 hover:text-emerald-400" title="Editar">
+                      <button type="button" onClick={() => handleOpenForm(act)} className="text-slate-400 hover:text-emerald-400" title="Editar">
                         <Edit size={16} />
                       </button>
-                      <button onClick={() => handleDelete(act.id)} className="text-slate-400 hover:text-red-400" title="Excluir">
+                      <button type="button" onClick={() => setItemToDelete(act.id)} className="text-slate-400 hover:text-red-400" title="Excluir">
                         <Trash2 size={16} />
                       </button>
                     </td>
@@ -1188,9 +1159,14 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
         </div>
       </div>
 
-      {/* MODAL FORMULÁRIO */}
       <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={editingItem ? `Editar - ${moduleDef.title}` : `Novo - ${moduleDef.title}`}>
         <form onSubmit={handleSaveForm} className="space-y-4">
+          {formError && (
+            <div className="p-3 bg-red-900/50 border border-red-500 text-red-200 rounded text-sm">
+              {formError}
+            </div>
+          )}
+          
           <div>
             <label className="block text-sm mb-1 text-slate-300">Obra Responsável</label>
             <SearchableSiteSelect 
@@ -1226,7 +1202,6 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
             ))}
           </div>
 
-          {/* Anexos - Sistema de Upload Múltiplo */}
           <div className="pt-4 border-t border-slate-700">
             <label className="block text-sm mb-2 text-slate-300 flex items-center">
               <Paperclip size={16} className="mr-1" /> Ficheiros Anexados
@@ -1269,7 +1244,14 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
         </form>
       </Modal>
 
-      {/* MODAL HISTÓRICO / CHAT */}
+      <Modal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} title="Confirmar Exclusão">
+        <p className="text-slate-300 mb-6">Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.</p>
+        <div className="flex justify-end space-x-3">
+          <button type="button" onClick={() => setItemToDelete(null)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors">Cancelar</button>
+          <button type="button" onClick={() => confirmDelete(itemToDelete)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors">Excluir</button>
+        </div>
+      </Modal>
+
       {isHistoryOpen && editingItem && (
         <HistoryModal 
           isOpen={isHistoryOpen} 
@@ -1281,7 +1263,6 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
         />
       )}
 
-      {/* MODAL DE LISTAGEM DE ANEXOS (Acesso direto da tabela) */}
       {viewAttachmentsItem && (
         <Modal isOpen={!!viewAttachmentsItem} onClose={() => setViewAttachmentsItem(null)} title={`Anexos Disponíveis`}>
           <div className="space-y-3">
@@ -1307,7 +1288,6 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
         </Modal>
       )}
 
-      {/* MODAL DE PRÉ-VISUALIZAÇÃO (PREVIEWER) */}
       {previewFile && (
         <Modal isOpen={!!previewFile} onClose={() => setPreviewFile(null)} title={`A visualizar: ${previewFile.name}`}>
           <div className="w-full flex flex-col items-center justify-center bg-slate-900 rounded-lg overflow-hidden min-h-[50vh] border border-slate-700 p-4">
@@ -1333,7 +1313,6 @@ function ModuleTable({ moduleDef, sites, activities, db, appId, appUser }) {
   );
 }
 
-// Modal dedicado para Chat/Histórico da linha
 function HistoryModal({ isOpen, onClose, activity, db, appId, appUser }) {
   const [msg, setMsg] = useState('');
   
@@ -1349,7 +1328,7 @@ function HistoryModal({ isOpen, onClose, activity, db, appId, appUser }) {
     
     try {
       await updateDoc(doc(db, `artifacts/${appId}/public/data/activities`, activity.id), { history: newHistory });
-      activity.history = newHistory; // update local ref
+      activity.history = newHistory;
       setMsg('');
     } catch (err) {
       console.error(err);
@@ -1393,7 +1372,6 @@ function HistoryModal({ isOpen, onClose, activity, db, appId, appUser }) {
   );
 }
 
-// --- CONFIGURAÇÕES MASTER ---
 function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserName, setNewUserName] = useState('');
@@ -1402,6 +1380,13 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
   
   const [modTitle, setModTitle] = useState('');
   const [modCols, setModCols] = useState([{ key: 'col1', label: '', type: 'text', optionsStr: '' }]);
+
+  const [feedbackMsg, setFeedbackMsg] = useState({ text: '', type: '' });
+
+  const showFeedback = (text, type = 'success') => {
+    setFeedbackMsg({ text, type });
+    setTimeout(() => setFeedbackMsg({ text: '', type: '' }), 4000);
+  };
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
@@ -1415,8 +1400,11 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
         role: newUserEmail.toLowerCase().includes('yago') ? 'master' : 'admin'
       });
       setNewUserEmail(''); setNewUserName(''); setNewUserPass(''); setNewUserResp('');
-      alert('Usuário criado com sucesso!');
-    } catch(err) { console.error(err); }
+      showFeedback('Usuário criado com sucesso!');
+    } catch(err) { 
+      console.error(err);
+      showFeedback('Erro ao criar usuário.', 'error');
+    }
   };
 
   const handleCreateModule = async (e) => {
@@ -1433,7 +1421,6 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
       }
     });
 
-    // Injeta as colunas obrigatórias sempre que uma nova tarefa é criada pelo Master
     const baseCols = [
       { key: 'criador', label: 'Usuário', type: 'text' },
       { key: 'competencia', label: 'Competência', type: 'select', options: COMPETENCIAS }
@@ -1449,15 +1436,17 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
       await addDoc(collection(db, `artifacts/${appId}/public/data/customModules`), newModule);
       setModTitle('');
       setModCols([{ key: 'col1', label: '', type: 'text', optionsStr: '' }]);
-      alert('Módulo criado com sucesso! Ele já aparecerá na barra lateral.');
-    } catch(err) { console.error(err); }
+      showFeedback('Módulo criado com sucesso! Ele já aparecerá na barra lateral.');
+    } catch(err) { 
+      console.error(err); 
+      showFeedback('Erro ao criar módulo.', 'error');
+    }
   };
 
-  // Pega lista de responsáveis únicos das obras para facilitar o select de membro
   const uniqueResponsaveis = [...new Set(sites.map(s => s.responsavel))].filter(Boolean);
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-5xl mx-auto relative">
       <div>
         <h2 className="text-2xl font-bold text-white border-b border-slate-700 pb-2 flex items-center">
           <Settings className="mr-2 text-blue-500" />
@@ -1465,8 +1454,16 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
         </h2>
       </div>
 
+      {feedbackMsg.text && (
+        <div className={`p-4 rounded-md mb-4 flex items-center shadow-lg border ${
+          feedbackMsg.type === 'error' ? 'bg-red-900/80 border-red-700 text-red-200' : 'bg-emerald-900/80 border-emerald-700 text-emerald-200'
+        }`}>
+          {feedbackMsg.type === 'error' ? <AlertCircle className="mr-2" size={20} /> : <CheckSquare className="mr-2" size={20} />}
+          {feedbackMsg.text}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Gestão de Acessos */}
         <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 shadow-md">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <Users className="mr-2 text-slate-400" size={20} /> Conceder Acesso
@@ -1513,7 +1510,6 @@ function SettingsPanel({ appUsers, customModules, db, appId, sites }) {
           </div>
         </div>
 
-        {/* Criador de Módulos Customizados */}
         <div className="bg-slate-800 p-6 rounded-lg border border-slate-700 shadow-md">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
             <FileText className="mr-2 text-slate-400" size={20} /> Nova Atividade Customizada
